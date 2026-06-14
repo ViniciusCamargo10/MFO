@@ -1,0 +1,308 @@
+# Automação de Monitoramento do DOU
+
+## Visão Geral
+
+Esta automação tem como objetivo monitorar o Diário Oficial da União (DOU) duas vezes por dia, identificar publicações relevantes relacionadas ao processo AGRO/MFO, analisar possíveis impactos em cadastros e comunicar automaticamente os resultados.
+
+A automação executa um fluxo completo, desde a consulta ao DOU até o envio de relatório ao usuário.
+
+---
+
+## Objetivo
+
+- Automatizar a leitura do DOU
+- Identificar publicações relevantes (AGRO/MFO)
+- Detectar retificações (diretas e indiretas)
+- Comparar com cadastros existentes
+- Gerar relatório automático
+- Enviar comunicação ao usuário final
+
+---
+
+## Frequência de Execução
+
+O robô executa automaticamente nos seguintes horários:
+
+- 08:00
+- 16:00
+
+Após cada execução, o ciclo é reiniciado.
+
+---
+
+## Fluxo Completo da Automação
+
+### 1. Início da Execução (Robô - Time)
+
+O robô inicia automaticamente no horário configurado.
+
+- Acessa o site do DOU
+- Inicia uma nova execução do fluxo
+
+---
+
+### 2. Leitura Inicial do DOU (Robô - Leitura)
+
+O robô verifica se existe publicação relevante no dia.
+
+#### Caso exista publicação:
+- Segue para análise detalhada
+
+#### Caso não exista publicação:
+- Registra no log
+- Encerra a execução
+
+---
+
+### 3. Verificação Inicial (Robô - Verificação)
+
+O robô analisa se a publicação tem relação com os cadastros existentes (AGRO/MFO).
+
+#### Caso tenha relação:
+- Prossegue para análise de mudanças
+
+#### Caso não tenha relação:
+- Registra no log
+- Encerra o fluxo
+
+---
+
+### 4. Identificação de Mudanças (Robô - Verificação)
+
+O robô verifica se houve alterações em relação aos cadastros:
+
+#### Caso haja mudança:
+- Prossegue com o tratamento da alteração
+
+#### Caso não haja mudança:
+- Fluxo encerrado
+- Registro no log
+
+---
+
+### 5. Identificação de Retificações
+
+O robô identifica se a publicação é uma retificação:
+
+#### Caso 1 — Retificação Direta
+- A alteração está explícita na publicação
+- O robô consegue aplicar diretamente a mudança
+
+#### Caso 2 — Retificação Indireta
+- A publicação referencia outro ato
+- O robô precisa buscar a informação original
+
+---
+
+### 6. Tratamento da Retificação
+
+#### Retificação Direta:
+- Robô identifica o campo alterado
+- Aplica a alteração diretamente no cadastro
+
+#### Retificação Indireta:
+
+1. O robô identifica referência ao DOU anterior
+2. Acessa a publicação original
+3. Verifica a mudança indicada (ex: Seção, item, ato)
+4. Identifica o impacto real
+5. Determina se há alteração relevante
+
+---
+
+### 7. Aplicação de Filtros (Robô - Filtros)
+
+Após identificar a mudança:
+
+- O robô aplica filtros previamente definidos (ex: regras do GIAGRO)
+- Determina se a mudança impacta o fluxo
+
+#### Caso impacte:
+- Prossegue para armazenamento
+
+#### Caso não impacte:
+- Registra e encerra fluxo
+
+---
+
+### 8. Armazenamento de Dados (Robô - Armazenamento)
+
+O robô registra:
+
+- Tipo de mudança
+- Dados afetados
+- Origem da mudança (DOU)
+- Data da execução
+
+Os dados ficam disponíveis para geração de relatório.
+
+---
+
+### 9. Atualização de Cadastro (Robô - Veeva)
+
+O robô prepara ou executa a atualização no cadastro (Veeva):
+
+- Ajusta os dados conforme a mudança identificada
+- Registra histórico da alteração
+
+---
+
+### 10. Geração de Relatório (Robô - Relatório)
+
+O robô gera automaticamente um relatório contendo:
+
+- Publicações analisadas
+- Alterações identificadas
+- Impactos no cadastro
+- Ações realizadas
+
+---
+
+### 11. Comunicação (Robô - Comunicação)
+
+O robô envia comunicação automática:
+
+- E-mail com relatório
+- Descrição das alterações
+- Destaque das ações executadas
+
+Os destinatários variam conforme o tipo de mudança.
+
+---
+
+### 12. Recebimento pelo Usuário (Robô - User)
+
+O usuário recebe:
+
+- Relatório completo
+- Informações resumidas
+- Detalhamento das mudanças
+
+---
+
+### 13. Reinício do Ciclo
+
+Após finalizar:
+
+- O robô entra em estado de espera
+- Aguarda o próximo horário (08h ou 16h)
+- Reinicia automaticamente o processo
+
+---
+
+## Estrutura de Logs
+
+Cada execução registra:
+
+- Data e hora
+- Status (Sucesso / Falha)
+- Existência de publicação
+- Tipo de alteração
+- Resultado do processamento
+- Eventuais erros
+
+---
+
+## Regras de Decisão do Fluxo
+
+| Condição | Ação |
+|--------|------|
+Sem publicação | Encerrar fluxo |
+Sem relação com cadastro | Encerrar fluxo |
+Sem alteração relevante | Encerrar fluxo |
+Retificação direta | Aplicar alteração |
+Retificação indireta | Buscar referência |
+Mudança relevante | Gerar relatório e comunicar |
+
+---
+
+## Tipos de Retificação
+
+### Retificação Direta
+A alteração está claramente descrita na publicação do DOU.
+
+### Retificação Indireta
+A alteração exige consulta a outro ato ou publicação para validação.
+
+---
+
+## Componentes da Solução (podemos utilizar outros melhores apenas uma ideia temos que planejar:)
+
+- **Agendador (Scheduler)** — Executa nos horários definidos
+- **Scraper DOU** — Acessa e coleta dados do DOU
+- **Parser** — Extrai informações relevantes
+- **Rules Engine** — Aplica regras de negócio
+- **Integração Veeva** — Atualiza cadastros
+- **Módulo de Relatório** — Gera saída estruturada
+- **Módulo de Comunicação** — Envia e-mails
+- **Sistema de Logs** — Registra todas as execuções
+
+---
+
+## Execução Automática com GitHub Actions (Sem Custo, verificar se é o melhor caminho e se realmente é possivel)
+
+### 🎯 Objetivo
+
+Utilizar o GitHub Actions como solução gratuita para executar automaticamente o robô do DOU nos horários definidos (08:00 e 16:00), sem necessidade de servidor dedicado ou infraestrutura paga.
+
+---
+
+## 🧠 O que é GitHub Actions
+
+GitHub Actions é uma funcionalidade da plataforma GitHub que permite automatizar execuções de código por meio de workflows.
+
+Esses workflows podem ser configurados para rodar:
+- Em horários específicos (scheduler)
+- A cada alteração no código
+- Manualmente
+
+No contexto desta automação, o GitHub Actions funciona como um **agendador (scheduler)** que executa o robô Python automaticamente.
+
+---
+
+## 🔄 Como funciona na automação
+
+O fluxo de execução com GitHub Actions é:
+
+1. O GitHub agenda a execução com base em horários definidos
+2. Um ambiente virtual Linux é iniciado automaticamente
+3. O código do repositório é carregado
+4. O Python é configurado
+5. As dependências são instaladas
+6. O script `main.py` é executado
+7. O robô realiza todo o fluxo:
+   - Acessa o DOU
+   - Processa dados
+   - Aplica regras
+   - Gera relatório
+   - Envia e-mail
+8. O ambiente é finalizado
+
+---
+
+## ⏰ Configuração de Horários
+
+O GitHub Actions utiliza a sintaxe CRON para agendamento.
+
+Exemplo utilizado na automação:
+
+```yaml
+on:
+  schedule:
+    - cron: '0 11 * * *'   # 08:00 (horário Brasil UTC-3)
+    - cron: '0 19 * * *'   # 16:00 (horário Brasil UTC-3)
+
+
+## Resultado Esperado
+
+Ao final de cada execução, o sistema deverá:
+
+- Acessar o DOU  
+- Identificar publicações relevantes  
+- Detectar alterações  
+- Aplicar regras de negócio  
+- Registrar logs  
+- Gerar relatório  
+- Enviar comunicação  
+- Preparar próxima execução  
+
