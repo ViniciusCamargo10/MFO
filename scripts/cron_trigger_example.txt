@@ -1,21 +1,32 @@
-=== Configuração no cron-job.org (ou similar) ===
+=== Configuração no cron-job.org ===
 
-1. Crie conta em https://cron-job.org
-2. Adicione um novo cron job:
+1. Crie conta em https://cron-job.org (gratuito)
+2. Adicione um NOVO cron job (repita para cada horário):
 
-   Method: POST
+   === Job 1 - 08:00 BRT ===
+   Title: DOU Automation 08:00
    URL: https://api.github.com/repos/ViniciusCamargo10/MFO/actions/workflows/dou_automation.yml/dispatches
-   Headers:
+   Method: POST
+   Custom Headers:
      Authorization: Bearer SEU_TOKEN_AQUI
      Content-Type: application/json
-     Accept: application/vnd.github.v3+json
-   Body: {"ref": "main"}
-   Schedule: A cada dia às 08:00 BRT (11:00 UTC) e 16:00 BRT (19:00 UTC)
+   Body: {"ref":"main"}
+   Schedule: Every day at 11:00 (UTC) = 08:00 BRT
+
+   === Job 2 - 16:00 BRT ===
+   Title: DOU Automation 16:00
+   URL: https://api.github.com/repos/ViniciusCamargo10/MFO/actions/workflows/dou_automation.yml/dispatches
+   Method: POST
+   Custom Headers:
+     Authorization: Bearer SEU_TOKEN_AQUI
+     Content-Type: application/json
+   Body: {"ref":"main"}
+   Schedule: Every day at 19:00 (UTC) = 16:00 BRT
 
 === Teste manual via PowerShell ===
 .\scripts\trigger_workflow.ps1 -Token "SEU_TOKEN"
 
-=== Teste manual via curl ===
+=== Teste manual via curl (CMD/PowerShell) ===
 curl -X POST https://api.github.com/repos/ViniciusCamargo10/MFO/actions/workflows/dou_automation.yml/dispatches ^
   -H "Authorization: Bearer SEU_TOKEN" ^
   -H "Content-Type: application/json" ^
