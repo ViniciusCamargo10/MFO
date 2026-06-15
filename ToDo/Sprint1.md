@@ -1,80 +1,83 @@
-## Sprint 1 — 08/06 a 12/06
+## Sprint 1 — 10/06 a 14/06
 
 ### Meta
 Criar a base inicial do robô para acessar o DOU nos horários definidos e registrar a execução.
 
 ---
 
-## To Clarify
+## Done
 
 ### 1. Confirmar: fonte/URL oficial da DOU
-Definir qual página ou fonte oficial do DOU será usada pelo robô para iniciar a consulta.
+✅ URL definida: `https://www.in.gov.br/leiturajornal`
 
 ### 2. Confirmar: regra de calendário da execução
-Determinar se o robô será executado todos os dias, apenas em dias úteis ou em datas específicas.
+✅ Execução todos os dias (agendamento via cron no GitHub Actions)
 
 ### 3. Confirmar: horários oficiais de execução (08:00 e 16:00)
-Definir claramente os horários em que o robô deve iniciar automaticamente.
+✅ Horários definidos: 08:00 e 16:00 BRT (11:00 e 19:00 UTC)
 
 ### 4. Confirmar: onde o log será armazenado
-Definir se o log será salvo em arquivo local, SharePoint, Microsoft Lists ou banco de dados.
+✅ Log local em `logs/execucao.jsonl` + artefato no GitHub Actions
 
 ### 5. Confirmar quais informações precisam aparecer no log
-Definir quais campos o log deve conter:
-- Data
-- Horário
-- Status
-- Erro (se houver)
-- Informações da execução
+✅ Campos implementados: data_hora, status, erro, info
 
----
+### 6. Criar estrutura inicial do script
+✅ Estrutura do projeto criada:
+```
+MFO/
+├── .github/workflows/dou_automation.yml
+├── Documentacao/
+├── logs/
+├── src/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── dou_scraper.py
+│   ├── scheduler.py
+│   └── logger.py
+├── ToDo/
+├── requirements.txt
+└── .gitignore
+```
 
-## To Do
+### 7. Criar função de acesso ao site da DOU
+✅ `src/dou_scraper.py` — acessa DOU, extrai data, seções e quantidade de artigos
 
-### 1. Criar estrutura inicial do script
-Montar a base do código da automação para organizar as próximas etapas do desenvolvimento.
+### 8. Criar lógica de agendamento
+✅ `src/scheduler.py` — agendamento local para 08:00 e 16:00
 
-### 2. Criar função de acesso ao site da DOU
-Desenvolver a primeira função responsável por abrir e consultar a fonte oficial do DOU.
+### 9. Criar log de execução e tratamento de erro
+✅ `src/logger.py` — registro em JSONL com data, status, erro e info
 
-### 3. Criar lógica de agendamento
-Programar o robô para iniciar automaticamente a consulta nos horários definidos.
+### 10. Execução inicial do script e validação básica do fluxo
+✅ Script testado manualmente — acesso ao DOU com sucesso
 
-### 4. Criar log de execução e tratamento de erro
-Implementar o registro básico de execução contendo:
-- Data
-- Horário
-- Status (sucesso/falha)
-- Mensagem de erro (se ocorrer)
-
----
-
-## In Progress
-
-- Execução inicial do script e validação básica do fluxo
+### 11. Criar workflow do GitHub Actions
+✅ `.github/workflows/dou_automation.yml` — execução automática 2x/dia + manual
 
 ---
 
 ## Review
 
 ### 1. Testar acesso da automação ao DOU
-Validar se o robô consegue acessar corretamente a fonte definida.
+✅ Validado — DOU retorna 200 e dados são extraídos corretamente
 
-### 2. Testar execução simulada às 08:00
-Verificar se a lógica de agendamento funciona para o primeiro horário.
+### 2. Testar execução às 08:00 (GitHub Actions)
+🔄 Aguardando primeira execução agendada automática
 
-### 3. Testar execução simulada às 16:00
-Verificar se a lógica de agendamento funciona para o segundo horário.
+### 3. Testar execução às 16:00 (GitHub Actions)
+🔄 Aguardando primeira execução agendada automática
 
 ### 4. Validar log de execução
-Conferir se o log registra corretamente:
-- Data
-- Horário
-- Status
-- Resultado da execução
+✅ Log testado — `logs/execucao.jsonl` registrando corretamente
 
 ---
 
-## Done
+## To Do (Próximas Sprints)
 
-- (Preencher conforme evolução da sprint)
+- [ ] Extrair títulos e links individuais dos artigos
+- [ ] Filtrar publicações por palavra-chave (AGRO/MFO)
+- [ ] Identificar retificações diretas e indiretas
+- [ ] Comparar publicações com cadastros existentes
+- [ ] Gerar relatório estruturado
+- [ ] Notificação por e-mail

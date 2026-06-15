@@ -1,8 +1,8 @@
 # Sprint 1 — Base do Robô DOU
 
 ## Período
-- **Início:** 14/06/2026
-- **Término:** 14/06/2026
+- **Início:** 10/06/2026
+- **Término:** 12/06/2026
 
 ## Objetivo da Sprint
 Construir a base estrutural do robô de monitoramento do DOU, incluindo agendamento, acesso ao site, registro de logs e deploy automatizado via GitHub Actions.
