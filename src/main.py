@@ -9,11 +9,11 @@ from src.scheduler import configurar, iniciar
 
 
 def executar():
-    print(f"Iniciando execução...")
+    print("Iniciando execucao...")
     sucesso, mensagem = acessar_dou()
     if sucesso:
-        registrar_execucao(status="SUCESSO", info=mensagem)
-        print(f"OK - {mensagem}")
+        registrar_execucao(status="SUCESSO", info=mensagem.replace("\n", " | "))
+        print(mensagem)
     else:
         registrar_execucao(status="FALHA", erro=mensagem)
         print(f"FALHA - {mensagem}")
