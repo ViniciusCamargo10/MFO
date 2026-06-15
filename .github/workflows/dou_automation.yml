@@ -2,8 +2,7 @@ name: DOU Automation
 
 on:
   schedule:
-    - cron: '22 11 * * *'
-    - cron: '0 19 * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:
