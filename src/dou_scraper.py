@@ -1,6 +1,5 @@
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
 from typing import Optional
 
 DOU_URL = "https://www.in.gov.br/leiturajornal"
