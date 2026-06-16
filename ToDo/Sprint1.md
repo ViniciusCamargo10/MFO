@@ -63,10 +63,11 @@ MFO/
 ✅ Validado — DOU retorna 200 e dados são extraídos corretamente
 
 ### 2. Testar execução às 08:00 (GitHub Actions)
-❌ Schedule do GitHub Actions não funciona para este repositório (nunca disparou, mesmo após reset)
+❌ Schedule do GitHub não funciona neste repo — contornado com cron-job.org
 
 ### 3. Testar execução às 16:00 (GitHub Actions)
-❌ Substituído por trigger via API externa (cron-job.org + PAT token)
+✅ 08:00 funcionou via cron-job.org (Bearer + Raw JSON)
+✅ 16:00 — configurar segundo job no cron-job.org
 
 ### 4. Validar log de execução
 ✅ Log testado — `logs/execucao.jsonl` registrando corretamente
