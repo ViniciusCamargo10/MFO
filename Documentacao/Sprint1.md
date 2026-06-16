@@ -76,7 +76,17 @@ Dois modos de execução:
   4. Execução do scraper (`python src/main.py --manual`)
   5. Upload do log como artefato
 
-### 7. Versionamento (Git)
+### 7. Trigger Externo (cron-job.org)
+
+O evento `schedule` do GitHub Actions não funcionou neste repositório. Foi adotada uma solução alternativa:
+
+- **Serviço:** [cron-job.org](https://cron-job.org) (gratuito)
+- **Mecanismo:** chamada POST à API do GitHub (`workflow_dispatch`) nos horários agendados
+- **Jobs:** 08:00 BRT e 16:00 BRT
+- **Token:** PAT com permissão `Actions: Read and Write` apenas
+- **Script auxiliar:** `scripts/trigger_workflow.ps1`
+
+### 8. Versionamento (Git)
 
 - Repositório criado no GitHub: `ViniciusCamargo10/MFO`
 - Branch: `main`

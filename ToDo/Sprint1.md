@@ -66,8 +66,8 @@ MFO/
 ❌ Schedule do GitHub não funciona neste repo — contornado com cron-job.org
 
 ### 3. Testar execução às 16:00 (GitHub Actions)
-✅ 08:00 funcionou via cron-job.org (Bearer + Raw JSON)
-✅ 16:00 — configurar segundo job no cron-job.org
+✅ 08:00 funcionou via cron-job.org
+✅ 16:00 configurado no cron-job.org
 
 ### 4. Validar log de execução
 ✅ Log testado — `logs/execucao.jsonl` registrando corretamente

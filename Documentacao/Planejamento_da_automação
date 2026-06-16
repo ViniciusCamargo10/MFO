@@ -295,6 +295,48 @@ on:
 
 ## Resultado Esperado
 
+---
+
+## ⚠️ Observação sobre o Schedule do GitHub Actions
+
+O evento `schedule` do GitHub Actions **não funcionou** neste repositório (nunca disparou, mesmo com workflow ativo e repositório público). Após investigação, foi constatado que o schedule não estava sendo processado pelo GitHub.
+
+### Solução adotada: Trigger via API externa (cron-job.org)
+
+Em vez do `schedule`, a automação é disparada através de chamadas HTTP à API do GitHub Actions:
+
+1. Serviço gratuito **[cron-job.org](https://cron-job.org)** faz requisições POST nos horários agendados
+2. A requisição chama o endpoint `workflow_dispatch` do GitHub
+3. O workflow é executado normalmente no GitHub Actions
+
+### Configuração no cron-job.org
+
+São dois jobs configurados:
+
+| Horário BRT | Método | URL |
+|-------------|--------|-----|
+| 08:00 | POST | `https://api.github.com/repos/ViniciusCamargo10/MFO/actions/workflows/dou_automation.yml/dispatches` |
+| 16:00 | POST | (mesma URL) |
+
+**Headers:**
+- `Authorization: Bearer <PAT token>`
+- `Content-Type: application/json`
+
+**Body (Raw):**
+```json
+{"ref": "main"}
+```
+
+O token utilizado tem permissão apenas de `Actions: Read and Write`, sem acesso ao código do repositório.
+
+### Script auxiliar
+
+Em `scripts/trigger_workflow.ps1` — script PowerShell que faz a chamada manual à API.
+
+---
+
+## Resultado Esperado
+
 Ao final de cada execução, o sistema deverá:
 
 - Acessar o DOU  
