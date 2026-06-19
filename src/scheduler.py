@@ -1,7 +1,7 @@
 import schedule
 import time
 
-HORARIOS = ["08:21", "16:00"]
+HORARIOS = ["08:00", "16:00"]
 
 
 def configurar(job_func):
