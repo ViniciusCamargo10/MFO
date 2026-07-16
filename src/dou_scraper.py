@@ -369,12 +369,502 @@ def extrair_retificacoes_do_pdf(caminho_pdf: str) -> tuple[bool, list, str]:
                             "descricao": f"Onde se lê: \"{onde_texto}\" -> Leia-se: \"{leia_texto}\"",
                         })
 
-    doc.close()
-
     qtd_diretas = len(retificacoes)
+    doc.close()
 
     if qtd_diretas == 0:
         return False, [], "Nenhuma retificacao do DSV/CGAA encontrada neste PDF."
-    elif qtd_diretas > 0:
-        msg = f"Total de {qtd_diretas} retificacao(oes) direta(s) do DSV/CGAA encontrada(s). Nenhuma retificacao indireta identificada (necessario implementar deteccao especifica para o DSV/CGAA)."
-        return True, retificacoes, msg
+    msg = f"Total de {qtd_diretas} retificacao(oes) direta(s) do DSV/CGAA encontrada(s). Nenhuma retificacao indireta identificada (necessario implementar deteccao especifica para o DSV/CGAA)."
+    return True, retificacoes, msg
+
+
+MESES_BR = {
+    "JANEIRO": "01", "FEVEREIRO": "02", "MARÇO": "03", "MARCO": "03",
+    "ABRIL": "04", "MAIO": "05", "JUNHO": "06", "JULHO": "07",
+    "AGOSTO": "08", "SETEMBRO": "09", "OUTUBRO": "10", "NOVEMBRO": "11", "DEZEMBRO": "12",
+}
+
+
+def extrair_data_dou_referenciada(texto: str) -> str:
+    match = re.search(
+        r"NO\s+DOU\s+DE\s+(\d{1,2})\s+DE\s+(\w+)\s+DE\s+(\d{4})",
+        texto, re.IGNORECASE
+    )
+    if not match:
+        return ""
+    dia, mes_ext, ano = match.group(1), match.group(2).upper(), match.group(3)
+    mes = MESES_BR.get(mes_ext)
+    if not mes:
+        return ""
+    return f"{dia.zfill(2)}/{mes}/{ano}"
+
+
+def extrair_url_pdf_secao1_por_data(data_str: str, destino_pdf: str = "") -> tuple[bool, str, str]:
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return False, "playwright nao instalado", ""
+
+    if "/" in data_str:
+        partes = data_str.split("/")
+    elif "-" in data_str:
+        partes = data_str.split("-")
+    else:
+        return False, f"Formato de data invalido: {data_str}", ""
+
+    if len(partes) != 3:
+        return False, f"Formato de data invalido: {data_str}", ""
+
+    dia, mes, ano = partes
+    nome_arquivo = f"secao1_{ano}_{mes.zfill(2)}_{dia.zfill(2)}.pdf"
+    if not destino_pdf:
+        destino_pdf = os.path.join(DOWNLOAD_DIR, nome_arquivo)
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-setuid-sandbox"],
+            )
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                locale="pt-BR", timezone_id="America/Sao_Paulo",
+            )
+            context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            """)
+            page = context.new_page()
+
+            urls_tentativas = [
+                f"https://www.in.gov.br/leiturajornal?data={dia}-{mes}-{ano}",
+                f"https://www.in.gov.br/leiturajornal?data={ano}-{mes.zfill(2)}-{dia.zfill(2)}",
+                f"https://www.in.gov.br/leiturajornal?data={dia}/{mes}/{ano}",
+            ]
+
+            for url in urls_tentativas:
+                try:
+                    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                    page.wait_for_timeout(3000)
+
+                    btn = page.locator("button.btn-diario-completo, button:has-text('DIARIO COMPLETO'), button:has-text('DIÁRIO COMPLETO')")
+                    if btn.count() > 0:
+                        btn.click()
+                        page.wait_for_timeout(5000)
+
+                        content = page.content()
+                        pdfs = re.findall(
+                            r'https?://download\.in\.gov\.br/sgpub/do/secao1/[^"\']+\.pdf[^"\'\s]*',
+                            content,
+                        )
+                        if pdfs:
+                            url_pdf = pdfs[0].replace("&amp;", "&")
+                            os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+                            page2 = context.new_page()
+                            with page2.expect_download(timeout=120000) as download_info:
+                                try:
+                                    page2.goto(url_pdf, timeout=120000)
+                                except Exception:
+                                    pass
+
+                            download = download_info.value
+                            download.save_as(destino_pdf)
+                            page2.close()
+                            browser.close()
+                            return True, destino_pdf, url_pdf
+                except Exception:
+                    continue
+
+            browser.close()
+            return False, f"Nao foi possivel acessar DOU de {data_str}", ""
+    except Exception as e:
+        return False, f"Erro ao acessar DOU de {data_str}: {e}", ""
+
+
+def processar_retificacoes_referenciadas(retificacoes: list) -> list:
+    resultados = []
+    for ret in retificacoes:
+        data_ref = ret.get("data_dou_referenciada", "")
+        if not data_ref:
+            resultados.append(ret)
+            continue
+
+        nome_pdf = data_ref.replace("/", "_") + ".pdf"
+        caminho_pdf = os.path.join(DOWNLOAD_DIR, f"referenciado_{nome_pdf}")
+
+        sucesso, msg, url = extrair_url_pdf_secao1_por_data(data_ref, caminho_pdf)
+        if not sucesso:
+            ret["referencia_erro"] = msg
+            resultados.append(ret)
+            continue
+
+        sucesso_atos, atos_ref, msg_atos = extrair_atos_do_pdf(caminho_pdf)
+        if not sucesso_atos:
+            ret["referencia_erro"] = msg_atos
+            resultados.append(ret)
+            continue
+
+        texto_original = atos_ref[0].get("texto", "")
+        onde = ret.get("onde_se_le", "")
+        leia = ret.get("leia_se", "")
+
+        def _aplicar_correcao(texto_original: str, onde_se_le: str, leia_se: str) -> tuple[str, bool]:
+            texto_c = texto_original
+            ocorrencias = 0
+            onde_clean = onde_se_le.strip(" .")
+            leia_clean = leia_se.strip(" .")
+            leia_sem_data = re.sub(
+                r"\s*NO\s+DOU\s+DE\s+\d+\s+DE\s+\w+\s+DE\s+\d+\s*,?\s*EM\s*",
+                "", leia_clean, flags=re.IGNORECASE
+            ).strip()
+
+            partes_onde = [p.strip() for p in re.split(r'(?<=\.)(?=\s)', onde_clean) if p.strip()]
+            partes_leia = [p.strip() for p in re.split(r'(?<=\.)(?=\s)', leia_sem_data) if p.strip()]
+
+            for po, pl in zip(partes_onde, partes_leia):
+                if len(po) > 10 and texto_c.upper().count(po.upper()) > 0:
+                    ocorrencias += 1
+                    texto_c = re.sub(re.escape(po), pl, texto_c, flags=re.IGNORECASE)
+            return texto_c, ocorrencias > 0
+
+        texto_corrigido_ref, correcao_aplicada_ref = _aplicar_correcao(texto_original, onde, leia)
+
+        ret["referencia_data"] = data_ref
+        ret["referencia_pdf"] = caminho_pdf
+        ret["referencia_cabecalho"] = atos_ref[0].get("cabecalho", "")
+        ret["correcao_aplicada_referencia"] = correcao_aplicada_ref
+        if correcao_aplicada_ref:
+            ret["texto_original_referencia"] = texto_original
+            ret["texto_corrigido_referencia"] = texto_corrigido_ref
+
+        resultados.append(ret)
+
+    return resultados
+
+
+def tratar_retificacoes_diretas(atos: list, retificacoes: list) -> list:
+    if not retificacoes or not atos:
+        return retificacoes
+
+    texto_ato = atos[0].get("texto", "").upper() if atos else ""
+
+    PADROES_CATEGORIA = [
+        ("Marca comercial", r"MARCA\s+COMERCIAL"),
+        ("Fabricantes", r"(?:ALTERAÇÃO|INCLUSÃO|EXCLUSÃO)\s+(?:DO|DE)\s+FABRICANTE"),
+        ("Formuladores", r"(?:ALTERAÇÃO|INCLUSÃO|EXCLUSÃO)\s+(?:DO|DE)\s+FORMULADOR"),
+        ("Manipuladores", r"(?:ALTERAÇÃO|INCLUSÃO|EXCLUSÃO)\s+(?:DO|DE)\s+MANIPULADOR"),
+        ("Razão social", r"RAZÃO\s+SOCIAL|RAZAO\s+SOCIAL"),
+        ("Endereço", r"ALTERAÇÃO\s+DE\s+ENDEREÇO|ALTERACAO\s+DE\s+ENDERECO"),
+        ("Transferência de titularidade", r"TRANSFERÊNCIA\s+DE\s+TITULARIDADE|TRANSFERENCIA\s+DE\s+TITULARIDADE"),
+        ("Produto técnico no formulado", r"PRODUTO\s+TÉCNICO|PRODUTO\s+TECNICO"),
+        ("Nome químico / comum", r"NOME\s+QUÍMICO|NOME\s+QUIMICO|NOME\s+COMUM"),
+        ("Classificação ambiental", r"CLASSIFICAÇÃO\s+(?:QUANTO\s+)?AO?\s+POTENCIAL"),
+        ("Classificação toxicológica", r"CLASSIFICAÇÃO\s+TOXICOLÓGICA|CLASSIFICACAO\s+TOXICOLOGICA"),
+        ("Recomendações de uso", r"RECOMENDAÇÕES\s+DE\s+USO|RECOMENDACOES\s+DE\s+USO"),
+    ]
+
+    def classificar_motivo(texto: str) -> str:
+        texto_u = texto.upper()
+        for categoria, padrao in PADROES_CATEGORIA:
+            if re.search(padrao, texto_u):
+                return categoria
+        return "Outros"
+
+    def classificar_tipo(texto: str) -> str:
+        texto_u = texto.upper()
+        if "EXCLUSÃO" in texto_u or "EXCLUSAO" in texto_u or "EXCLUIR" in texto_u:
+            return "Exclusão"
+        if "INCLUSÃO" in texto_u or "INCLUSAO" in texto_u or "INCLUIR" in texto_u:
+            return "Inclusão"
+        if "ALTERAÇÃO" in texto_u or "ALTERACAO" in texto_u:
+            return "Alteração"
+        return "Correção"
+
+    def extrair_numero_registro(texto: str) -> str:
+        match = re.search(r"REGISTRO\s+N[º°]?\s*(\d+)", texto, re.IGNORECASE)
+        return match.group(1) if match else ""
+
+    def extrair_numero_processo(texto: str) -> str:
+        match = re.search(r"PROCESSO\s+N[º°]?\s*([\d./-]+)", texto, re.IGNORECASE)
+        return match.group(1).strip(" .") if match else ""
+
+    def extrair_nome_produto(texto: str) -> str:
+        match = re.search(r"PRODUTO\s+([^,]+?)(?:\s*,\s*REGISTRO|\s*,\s*PROCESSO|\s*REGISTRO|\s*PROCESSO)", texto, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        match = re.search(r"DO\s+PRODUTO\s+([^,]+?)(?:\s*,\s*REGISTRO|\s*,\s*PROCESSO)", texto, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        return ""
+
+    def aplicar_correcao(texto_original: str, onde_se_le: str, leia_se: str) -> tuple[str, bool]:
+        texto_corrigido = texto_original
+        ocorrencias = 0
+
+        onde_clean = onde_se_le.strip(" .")
+        leia_clean = leia_se.strip(" .")
+        leia_sem_data = re.sub(
+            r"\s*NO\s+DOU\s+DE\s+\d+\s+DE\s+\w+\s+DE\s+\d+\s*,?\s*EM\s*",
+            "", leia_clean, flags=re.IGNORECASE
+        ).strip()
+
+        partes_onde = [p.strip() for p in re.split(r'(?<=\.)(?=\s)', onde_clean) if p.strip()]
+        partes_leia = [p.strip() for p in re.split(r'(?<=\.)(?=\s)', leia_sem_data) if p.strip()]
+
+        for parte_onde, parte_leia in zip(partes_onde, partes_leia):
+            if len(parte_onde) > 10:
+                count = texto_corrigido.upper().count(parte_onde.upper())
+                if count > 0:
+                    ocorrencias += count
+                    texto_corrigido = re.sub(
+                        re.escape(parte_onde), parte_leia, texto_corrigido, flags=re.IGNORECASE
+                    )
+
+        return texto_corrigido, ocorrencias > 0
+
+    resultados = []
+    for ret in retificacoes:
+        onde = ret.get("onde_se_le", "")
+        leia = ret.get("leia_se", "")
+
+        categoria = classificar_motivo(onde + " " + leia)
+        tipo = classificar_tipo(onde + " " + leia)
+        registro = extrair_numero_registro(onde + " " + leia)
+        processo = extrair_numero_processo(onde + " " + leia)
+        produto = extrair_nome_produto(onde + " " + leia)
+
+        texto_corrigido, aplicada = aplicar_correcao(texto_ato, onde, leia)
+
+        data_referenciada = extrair_data_dou_referenciada(leia) if not aplicada else ""
+
+        ret_enriquecida = {
+            **ret,
+            "categoria": categoria,
+            "tipo_mudanca": tipo,
+            "registro": registro,
+            "processo": processo,
+            "produto": produto,
+            "correcao_aplicada": aplicada,
+            "data_dou_referenciada": data_referenciada,
+        }
+        resultados.append(ret_enriquecida)
+
+    if resultados:
+        atos[0]["texto_corrigido"] = texto_corrigido
+
+    return resultados
+
+
+MATRIZ_FILTROS = {
+    "Fabricantes": {"inclusao": True, "alteracao": True, "exclusao": True},
+    "Formuladores": {"inclusao": True, "alteracao": True, "exclusao": True},
+    "Manipuladores": {"inclusao": True, "alteracao": True, "exclusao": True},
+    "Marca comercial": {"inclusao": True, "alteracao": True, "exclusao": True},
+    "Razão social": {"inclusao": True, "alteracao": True, "exclusao": True},
+    "Produto técnico no formulado": {"inclusao": True, "alteracao": True, "exclusao": True},
+    "Endereço": {"alteracao": True},
+    "Formulação": {"inclusao": True, "alteracao": True, "exclusao": True},
+    "Transferência de titularidade": {"alteracao": True},
+    "Retificações no DOU": {"alteracao": True},
+}
+
+
+def aplicar_filtros_atos(atos: list) -> list:
+    if not atos:
+        return []
+
+    texto = atos[0].get("texto", "")
+    padrao_item = re.compile(r"(\d+)\.\s*De\s+Acordo\s+com\s+o\s+Art\.", re.IGNORECASE)
+
+    items_raw = []
+    matches = list(padrao_item.finditer(texto))
+    for i, match in enumerate(matches):
+        inicio = match.start()
+        fim = matches[i + 1].start() if i + 1 < len(matches) else len(texto)
+        items_raw.append({
+            "numero": int(match.group(1)),
+            "texto": texto[inicio:fim].strip().replace("\n", " "),
+        })
+
+    PADROES_CATEGORIA = [
+        ("Marca comercial", r"MARCA\s+COMERCIAL"),
+        ("Fabricantes", r"(?:DO|DE|DOS)\s+FABRICANTE"),
+        ("Formuladores", r"(?:DO|DE|DOS)\s+FORMULADOR"),
+        ("Manipuladores", r"(?:DO|DE|DOS)\s+MANIPULADOR"),
+        ("Razão social", r"RAZÃO\s+SOCIAL|RAZAO\s+SOCIAL"),
+        ("Produto técnico no formulado", r"PRODUTO\s+TÉCNICO|PRODUTO\s+TECNICO"),
+        ("Endereço", r"ALTERAÇÃO\s+DE\s+ENDEREÇO|ALTERACAO\s+DE\s+ENDERECO"),
+        ("Transferência de titularidade", r"TRANSFERÊNCIA\s+DE\s+TITULARIDADE|TRANSFERENCIA\s+DE\s+TITULARIDADE"),
+        ("Formulação", r"FORMULAÇÃO|FORMULACAO"),
+        ("Nome químico", r"NOME\s+QUÍMICO|NOME\s+QUIMICO"),
+        ("Nome comum", r"NOME\s+COMUM"),
+        ("Classificação ambiental", r"CLASSIFICAÇÃO\s+(?:QUANTO\s+)?AO?\s+POTENCIAL"),
+        ("Classificação toxicológica", r"CLASSIFICAÇÃO\s+TOXICOLÓGICA|CLASSIFICACAO\s+TOXICOLOGICA"),
+        ("Recomendações de uso", r"RECOMENDAÇÕES\s+DE\s+USO|RECOMENDACOES\s+DE\s+USO"),
+        ("Inclusão de fabricante", r"INCLUSÃO\s+(?:DO|DE)\s+FABRICANTE|INCLUSAO\s+(?:DO|DE)\s+FABRICANTE"),
+    ]
+
+    def classificar_categoria(texto_item: str) -> str:
+        texto_u = texto_item.upper()
+        matches_encontrados = []
+        for categoria, padrao in PADROES_CATEGORIA:
+            if re.search(padrao, texto_u):
+                matches_encontrados.append(categoria)
+        return matches_encontrados[0] if matches_encontrados else "Outros"
+
+    def classificar_tipo(texto_item: str) -> str:
+        texto_u = texto_item.upper()
+        if "EXCLUSÃO" in texto_u or "EXCLUSAO" in texto_u:
+            return "Exclusão"
+        if "INCLUSÃO" in texto_u or "INCLUSAO" in texto_u:
+            return "Inclusão"
+        if "ALTERAÇÃO" in texto_u or "ALTERACAO" in texto_u:
+            return "Alteração"
+        if "TRANSFERÊNCIA" in texto_u or "TRANSFERENCIA" in texto_u:
+            return "Alteração"
+        if "AUTORIZAMOS" in texto_u or "AUTORIZADO" in texto_u:
+            return "Autorização"
+        return "Outros"
+
+    def extrair_registro(texto_item: str) -> str:
+        match = re.search(r"REGISTRO\s+N[º°]?\s*(?:TC)?(\d[\dA-Z]*)", texto_item, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        match = re.search(r"registro\s+n[º°]?\s*(?:TC)?(\d[\dA-Z]*)", texto_item, re.IGNORECASE)
+        return match.group(1) if match else ""
+
+    def extrair_processo(texto_item: str) -> str:
+        match = re.search(r"PROCESSO\s+N[º°]?\s*(\d[\d./-]*?\d)(?:\s*[,.]?\s*(?:conforme|$))", texto_item, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        return ""
+
+    def extrair_produto(texto_item: str) -> str:
+        delim = r"(?:registro\s+(?:n[º°])?|para\s+(?:a\s+)?marca\s+comercial|conforme\s+processo|processo)"
+        padroes = [
+            re.compile(r"(?:do|no)\s+produto\s+(?:formulado\s+)?(.+?)\s*,\s*" + delim, re.IGNORECASE),
+            re.compile(r"(?:do|no)\s+registro\s+(?:do|dos)\s+produto(?:s)?\s+(.+?)\s*,\s*" + delim, re.IGNORECASE),
+            re.compile(r"inclus[ãa]o\s+do\s+produto\s+t[ée]cnico\s+(.+?)\s*,\s*" + delim, re.IGNORECASE),
+            re.compile(r"produto\s+(?:formulado\s+)?(.+?)\s*,\s*(?:" + delim + r")", re.IGNORECASE),
+        ]
+        for padrao in padroes:
+            match = padrao.search(texto_item)
+            if match:
+                nome = match.group(1).strip()
+                nome = re.sub(r"^\s*(?:FORMULADO\s+)?T[ÉE]CNICO\s+", "", nome, flags=re.IGNORECASE).strip()
+                nome = re.sub(r"\s+", " ", nome)
+                return nome
+        return ""
+
+    def extrair_descricao_mudanca(texto_item: str) -> str:
+        texto_limpo = re.sub(r"\s+", " ", texto_item)
+        texto_u = texto_limpo.upper()
+        palavras_chave = [
+            "ALTERACAO",
+            "ALTERA" + "\u00c7\u00c3" + "O",
+            "INCLUSAO",
+            "INCLUS" + "\u00c3" + "O",
+            "EXCLUSAO",
+            "EXCLUS" + "\u00c3" + "O",
+            "TRANSFERENCIA",
+            "TRANSFER" + "\u00ca" + "NCIA",
+            "AUTORIZAMOS", "CANCELAMOS",
+        ]
+        melhor_pos = len(texto_limpo)
+        for palavra in palavras_chave:
+            pos = texto_u.find(palavra)
+            if pos != -1 and pos < melhor_pos:
+                melhor_pos = pos
+        if melhor_pos < len(texto_limpo):
+            fim = texto_limpo.find(", conforme", melhor_pos)
+            if fim == -1:
+                fim = texto_limpo.find(", registro", melhor_pos)
+            if fim == -1:
+                fim = texto_limpo.find(", processo", melhor_pos)
+            if fim == -1:
+                fim = texto_limpo.find(" n", melhor_pos + 50)
+            if fim == -1:
+                fim = texto_limpo.find(".", melhor_pos + 50)
+            if fim == -1:
+                fim = len(texto_limpo)
+            desc = texto_limpo[melhor_pos:fim].strip().rstrip(",").strip()
+            if "autorizamos" in desc.lower() and len(desc) > 60:
+                desc = desc[:60] + "..."
+            return desc
+        return ""
+
+    def extrair_artigo_inciso(texto_item: str) -> str:
+        match = re.search(r"(Art\.\s*\d+[^,]*?)(?:,|$)", texto_item, re.IGNORECASE)
+        return match.group(1).strip() if match else ""
+
+    def verificar_filtro(categoria: str, tipo: str) -> bool:
+        config = MATRIZ_FILTROS.get(categoria)
+        if not config:
+            return False
+        tipo_key = tipo.lower().replace("ção", "cao").replace("ão", "ao")
+        if tipo_key == "exclusão":
+            tipo_key = "exclusao"
+        if tipo_key == "inclusão":
+            tipo_key = "inclusao"
+        if tipo_key == "alteração":
+            tipo_key = "alteracao"
+        return config.get(tipo_key, False)
+
+    resultados = []
+    for item in items_raw:
+        categoria = classificar_categoria(item["texto"])
+        tipo = classificar_tipo(item["texto"])
+        registro = extrair_registro(item["texto"])
+        processo = extrair_processo(item["texto"])
+        produto = extrair_produto(item["texto"])
+        artigo = extrair_artigo_inciso(item["texto"])
+        filtro_ativo = verificar_filtro(categoria, tipo)
+
+        descricao = extrair_descricao_mudanca(item["texto"])
+
+        resultados.append({
+            "numero": item["numero"],
+            "categoria": categoria,
+            "tipo_mudanca": tipo,
+            "registro": registro,
+            "processo": processo,
+            "produto": produto,
+            "mudanca": descricao,
+            "artigo_inciso": artigo,
+            "filtro_ativo": filtro_ativo,
+        })
+
+    atos[0]["itens_filtrados"] = resultados
+    return resultados
+
+
+def salvar_dados_estruturados(atos: list, retificacoes: list, caminho_excel: str):
+    from openpyxl import Workbook
+    if not atos:
+        return
+
+    itens = atos[0].get("itens_filtrados", [])
+    campos = ["numero", "status_filtro", "categoria", "tipo_mudanca",
+              "registro", "produto", "mudanca", "processo", "artigo_inciso"]
+
+    wb = Workbook()
+
+    # --- Aba 1: Passaram ---
+    ws_filtro = wb.active
+    ws_filtro.title = "Passaram"
+    ws_filtro.append(campos)
+    for item in itens:
+        if item.get("filtro_ativo"):
+            row = [item.get(c, "") for c in campos]
+            row[campos.index("status_filtro")] = "PASSOU"
+            ws_filtro.append(row)
+
+    # --- Aba 2: Todos ---
+    ws_todos = wb.create_sheet("Todos")
+    ws_todos.append(campos)
+    for item in itens:
+        row = [item.get(c, "") for c in campos]
+        row[campos.index("status_filtro")] = "PASSOU" if item.get("filtro_ativo") else "IGNORADO"
+        ws_todos.append(row)
+
+    wb.save(caminho_excel)

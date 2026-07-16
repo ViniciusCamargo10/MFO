@@ -23,13 +23,16 @@ Baixar o PDF da Seção 1 do DOU dinamicamente e extrair os ATOS do Departamento
   - Retorna `(sucesso, lista_de_atos, mensagem_amigavel)`
 
 ### `src/main.py`
-- Fluxo em 4 etapas com mensagens amigaveis em portugues
-- `executar()`: acesso DOU -> download PDF -> extracao ATOS -> log
+- Fluxo em 5 etapas com mensagens amigaveis em portugues
+- `executar()`: acesso DOU -> download PDF -> extracao ATOS -> extracao retificacoes -> log
 - Modo offline: `--pdf <caminho>` para processar PDF existente
-- Salva ATOS em `.json` e `.txt` ao lado do PDF
+- Salva ATOS + retificações em `.json` e `.txt` ao lado do PDF
 
 ### `src/logger.py`
-- Novos campos: `pdf_baixado` (bool), `atos_encontrados` (int), `atos_info` (str)
+- Campos: `pdf_baixado` (bool), `atos_encontrados` (int), `atos_info` (str),
+  `dsv_encontrado` (bool), `retificacoes_encontradas` (int), `retificacoes_info` (str),
+  `cabecalho_ato` (str)
+- Log visual com emojis: ✅ DSV, ❌ sem DSV, 🔧 retificações
 
 ### Aprendizados
 - `download.in.gov.br` exige tokens `arg1`/`arg2` vinculados a sessao do browser
@@ -47,42 +50,12 @@ Baixar o PDF da Seção 1 do DOU dinamicamente e extrair os ATOS do Departamento
 - **Retificações Diretas**: DETECTADAS com sucesso. Padrão "Onde se lê... Leia-se..." na seção DSV/CGAA. Função `extrair_retificacoes_do_pdf()` em `src/dou_scraper.py:245`.
 
 **NÃO implementado corretamente:**
-- **Retificações Indiretas**: A detecção atual pega "cancelamos o registro" e "tornamos sem efeito" que são ATOS normais do DSV, não retificações. 
+- **Retificações Indiretas**: ⏳ **Em aguardo** — usuário vai fornecer um exemplo real de DOU com retificação indireta do DSV/CGAA para implementar corretamente.
 - **O que é retificação indireta**: Correção de erro em ato anterior do próprio DSV/CGAA (ex: "Retifica-se o Ato nº X do DSV publicado no DOU de...", "Errata: No Ato do CGAA...").
-- **Problema**: Qualquer "cancelamos" ou "tornamos sem efeito" no PDF está sendo classificado como retificação indireta, mas são apenas ATOS administrativos de cancelamento de registro.
-
-**Output atual:**
-```json
-{
-  "atos_dsv": [...],
-  "retificacoes": [
-    {
-      "tipo": "direta",
-      "onde_se_le": "...",
-      "leia_se": "...",
-      "pagina": 12,
-      "descricao": "..."
-    },
-    {
-      "tipo": "indireta",
-      "subtipo": "cancelar registro",
-      "ato_original": "DECRETO Nº 4074",
-      "texto": "cancelamos o registro do produto...",
-      "pagina": 9,
-      "descricao": "..."
-    }
-  ]
-}
-```
-
-**O que falta para retificações indiretas:**
-1. Filtrar apenas para a seção DSV/CGAA
-2. Detectar padrões como: "Retifica-se o Ato", "Errata", "Correção de publicação"
-3. NÃO detectar: "cancelamos o registro", "tornamos sem efeito" (são ATOS, não retificações)
 
 **Detalhes:** ver `Documentacao/Plano_Retificacoes.md`
 
 ---
 
-- [ ] Testar em GitHub Actions (Playwright + Chromium precisa ser instalado)
+- [x] Testar em GitHub Actions — executado em 19/06/2026, log visual OK (1 ATO + 5 retificações)
 - [x] Documentar cron-job.org em `Documentacao/CronJob.md`

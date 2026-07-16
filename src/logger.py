@@ -18,6 +18,12 @@ def registrar(
     retificacoes_encontradas: int = 0,
     retificacoes_info: str = "",
     cabecalho_ato: str = "",
+    itens_por_categoria: dict = None,
+    itens_filtrados: int = 0,
+    itens_total: int = 0,
+    retificacoes_tratadas: int = 0,
+    retificacoes_aplicadas: int = 0,
+    retificacoes_referenciadas: int = 0,
 ):
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     entry = {
@@ -32,7 +38,14 @@ def registrar(
         "retificacoes_encontradas": retificacoes_encontradas,
         "retificacoes_info": retificacoes_info,
         "cabecalho_ato": cabecalho_ato,
+        "itens_por_categoria": itens_por_categoria,
+        "itens_filtrados": itens_filtrados,
+        "itens_total": itens_total,
+        "retificacoes_tratadas": retificacoes_tratadas,
+        "retificacoes_aplicadas": retificacoes_aplicadas,
+        "retificacoes_referenciadas": retificacoes_referenciadas,
     }
+    entry = {k: v for k, v in entry.items() if v is not None and v != ""}
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
@@ -48,6 +61,12 @@ def registrar_execucao(
     retificacoes_encontradas: int = 0,
     retificacoes_info: str = "",
     cabecalho_ato: str = "",
+    itens_por_categoria: dict = None,
+    itens_filtrados: int = 0,
+    itens_total: int = 0,
+    retificacoes_tratadas: int = 0,
+    retificacoes_aplicadas: int = 0,
+    retificacoes_referenciadas: int = 0,
 ):
     agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    registrar(agora, status, erro, info, pdf_baixado, atos_encontrados, atos_info, dsv_encontrado, retificacoes_encontradas, retificacoes_info, cabecalho_ato)
+    registrar(agora, status, erro, info, pdf_baixado, atos_encontrados, atos_info, dsv_encontrado, retificacoes_encontradas, retificacoes_info, cabecalho_ato, itens_por_categoria, itens_filtrados, itens_total, retificacoes_tratadas, retificacoes_aplicadas, retificacoes_referenciadas)
