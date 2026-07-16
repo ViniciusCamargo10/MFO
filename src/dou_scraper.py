@@ -373,9 +373,184 @@ def extrair_retificacoes_do_pdf(caminho_pdf: str) -> tuple[bool, list, str]:
     doc.close()
 
     if qtd_diretas == 0:
-        return False, [], "Nenhuma retificacao do DSV/CGAA encontrada neste PDF."
-    msg = f"Total de {qtd_diretas} retificacao(oes) direta(s) do DSV/CGAA encontrada(s). Nenhuma retificacao indireta identificada (necessario implementar deteccao especifica para o DSV/CGAA)."
+        return False, [], "Nenhuma retificacao direta do DSV/CGAA encontrada neste PDF."
+    msg = f"Total de {qtd_diretas} retificacao(oes) direta(s) do DSV/CGAA encontrada(s)."
     return True, retificacoes, msg
+
+
+def extrair_retificacoes_indiretas_do_pdf(caminho_pdf: str) -> tuple[bool, list, str]:
+    """
+    Segunda passada independente no PDF buscando retificacoes indiretas do DSV/CGAA.
+
+    Retificacoes indiretas ficam na secao 'RETIFICACOES' ou 'ERRATA' no final do PDF,
+    fora do bloco do DSV/CGAA. Sao frases do tipo:
+      - "Retifica-se o Ato no X do DSV publicado no DOU de..."
+      - "Errata: No Ato no Y do CGAA..."
+      - "Correcao: Na publicacao do Ato no Z do DSV..."
+
+    Diferente das retificacoes diretas (ONDE SE LE / LEIA-SE), estas nao trazem
+    o par de correcao — apenas referenciam o ato e a data originais.
+    """
+    try:
+        import fitz
+    except ImportError:
+        return False, [], "PyMuPDF nao instalado. Execute: pip install pymupdf"
+
+    try:
+        doc = fitz.open(caminho_pdf)
+    except Exception as e:
+        return False, [], f"Erro ao abrir PDF: {e}"
+
+    def normalizar(texto: str) -> str:
+        return re.sub(r"\s+", " ", texto).strip().upper()
+
+    # Padroes para identificar inicio de secao de retificacoes no PDF
+    PADROES_SECAO_RETIF = re.compile(
+        r"^\s*RETIFICA[ÇC][ÕO]ES\s*$|^\s*ERRATA\s*$|^\s*ERRATA[S]?\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    )
+
+    # Padroes para detectar retificacao indireta do DSV/CGAA
+    PADROES_RETIF_INDIRETA = [
+        # "Retifica-se o Ato no 39 do DSV..."
+        re.compile(
+            r"RETIFICA[- ]?SE\s+O\s+ATO\s+N[Oº°]?\s*\.?\s*(\d+)[^,.\n]*?"
+            r"(?:DSV|CGAA|SANIDADE\s+VEGETAL|AGROT[ÓO]XICOS)[^,.\n]*?"
+            r"(?:PUBLICADO\s+NO\s+DOU\s+DE\s+([\d]{1,2}[/\-][\d]{1,2}[/\-][\d]{4}))?",
+            re.IGNORECASE,
+        ),
+        # "Errata: No Ato no 49 do CGAA..."
+        re.compile(
+            r"ERRATA\s*[:\-]?\s*NO\s+ATO\s+N[Oº°]?\s*\.?\s*(\d+)[^,.\n]*?"
+            r"(?:DSV|CGAA|SANIDADE\s+VEGETAL|AGROT[ÓO]XICOS)",
+            re.IGNORECASE,
+        ),
+        # "Correcao: Na publicacao do Ato no 45 do DSV..."
+        re.compile(
+            r"CORRE[ÇC][ÃA]O\s*[:\-]?\s*NA\s+PUBLICA[ÇC][ÃA]O\s+DO\s+ATO\s+N[Oº°]?\s*\.?\s*(\d+)[^,.\n]*?"
+            r"(?:DSV|CGAA|SANIDADE\s+VEGETAL|AGROT[ÓO]XICOS)",
+            re.IGNORECASE,
+        ),
+        # "Corrigir a publicacao do Ato do DSV..."
+        re.compile(
+            r"CORRIGIR\s+A\s+PUBLICA[ÇC][ÃA]O\s+DO\s+ATO[^,.\n]*?"
+            r"(?:DSV|CGAA|SANIDADE\s+VEGETAL|AGROT[ÓO]XICOS)",
+            re.IGNORECASE,
+        ),
+    ]
+
+    # Palavras que indicam que NAO e retificacao indireta — sao ATOS normais do DSV
+    PADROES_FALSO_POSITIVO = re.compile(
+        r"CANCELAMOS\s+O\s+REGISTRO|TORNAMOS\s+SEM\s+EFEITO|REVOGAMOS",
+        re.IGNORECASE,
+    )
+
+    retificacoes_indiretas = []
+
+    for pag_num in range(len(doc)):
+        pagina = doc[pag_num]
+        texto_pag = pagina.get_text("text")
+        texto_norm = normalizar(texto_pag)
+
+        # Checar se esta pagina contem secao de RETIFICACOES / ERRATA
+        em_secao_retif = bool(PADROES_SECAO_RETIF.search(texto_norm))
+
+        # Varrer linha a linha em busca dos padroes de retificacao indireta
+        linhas = texto_pag.split("\n")
+        for i, linha in enumerate(linhas):
+            linha_norm = normalizar(linha)
+
+            # Ignorar linhas muito curtas ou que sejam falsos positivos
+            if len(linha_norm) < 15:
+                continue
+            if PADROES_FALSO_POSITIVO.search(linha_norm):
+                continue
+
+            for padrao in PADROES_RETIF_INDIRETA:
+                m = padrao.search(linha_norm)
+                if not m:
+                    continue
+
+                # Extrair numero do ato (grupo 1 quando disponivel)
+                num_ato = ""
+                try:
+                    num_ato = m.group(1) if m.lastindex and m.lastindex >= 1 else ""
+                except IndexError:
+                    pass
+
+                # Extrair data referenciada do match ou do contexto (proximas 3 linhas)
+                data_ref = ""
+                try:
+                    data_ref = m.group(2) if m.lastindex and m.lastindex >= 2 else ""
+                except IndexError:
+                    pass
+
+                if not data_ref:
+                    # Buscar "DOU de DD/MM/AAAA" ou "DOU de DD-MM-AAAA" nas proximas linhas
+                    contexto = " ".join(linhas[i:min(i + 4, len(linhas))])
+                    m_data = re.search(
+                        r"DOU\s+DE\s+(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})",
+                        normalizar(contexto),
+                        re.IGNORECASE,
+                    )
+                    if not m_data:
+                        m_data = re.search(
+                            r"(\d{1,2})\s+DE\s+(\w+)\s+DE\s+(\d{4})",
+                            normalizar(contexto),
+                            re.IGNORECASE,
+                        )
+                        if m_data:
+                            dia_r = m_data.group(1).zfill(2)
+                            mes_r = MESES_BR.get(m_data.group(2).upper(), "")
+                            ano_r = m_data.group(3)
+                            data_ref = f"{dia_r}/{mes_r}/{ano_r}" if mes_r else ""
+                    else:
+                        dia_r = m_data.group(1).zfill(2)
+                        mes_r = m_data.group(2).zfill(2)
+                        ano_r = m_data.group(3)
+                        data_ref = f"{dia_r}/{mes_r}/{ano_r}"
+
+                # Capturar bloco de texto da retificacao (linha atual + proximas ate linha em branco)
+                bloco_linhas = []
+                for j in range(i, min(i + 8, len(linhas))):
+                    l = linhas[j].strip()
+                    if not l and bloco_linhas:
+                        break
+                    if l:
+                        bloco_linhas.append(l)
+                texto_bloco = " ".join(bloco_linhas)
+
+                # Evitar duplicatas
+                ja_existe = any(
+                    r.get("ato_original") == num_ato and r.get("pagina") == pag_num + 1
+                    for r in retificacoes_indiretas
+                )
+                if ja_existe:
+                    break
+
+                retificacoes_indiretas.append({
+                    "tipo": "indireta",
+                    "ato_original": f"ATO Nº {num_ato}" if num_ato else "ATO (numero nao identificado)",
+                    "data_original": data_ref,
+                    "texto": texto_bloco,
+                    "pagina": pag_num + 1,
+                    "em_secao_retificacoes": em_secao_retif,
+                    "descricao": (
+                        f"Retificacao indireta: {texto_bloco[:120]}..."
+                        if len(texto_bloco) > 120
+                        else f"Retificacao indireta: {texto_bloco}"
+                    ),
+                })
+                break  # Um match por linha e suficiente
+
+    doc.close()
+
+    qtd = len(retificacoes_indiretas)
+    if qtd == 0:
+        return False, [], "Nenhuma retificacao indireta do DSV/CGAA encontrada neste PDF."
+
+    msg = f"Total de {qtd} retificacao(oes) indireta(s) do DSV/CGAA encontrada(s)."
+    return True, retificacoes_indiretas, msg
 
 
 MESES_BR = {

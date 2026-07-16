@@ -24,6 +24,7 @@ def registrar(
     retificacoes_tratadas: int = 0,
     retificacoes_aplicadas: int = 0,
     retificacoes_referenciadas: int = 0,
+    retificacoes_indiretas: int = 0,
 ):
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     entry = {
@@ -44,6 +45,7 @@ def registrar(
         "retificacoes_tratadas": retificacoes_tratadas,
         "retificacoes_aplicadas": retificacoes_aplicadas,
         "retificacoes_referenciadas": retificacoes_referenciadas,
+        "retificacoes_indiretas": retificacoes_indiretas,
     }
     entry = {k: v for k, v in entry.items() if v is not None and v != ""}
     with open(LOG_FILE, "a", encoding="utf-8") as f:
@@ -67,6 +69,7 @@ def registrar_execucao(
     retificacoes_tratadas: int = 0,
     retificacoes_aplicadas: int = 0,
     retificacoes_referenciadas: int = 0,
+    retificacoes_indiretas: int = 0,
 ):
     agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    registrar(agora, status, erro, info, pdf_baixado, atos_encontrados, atos_info, dsv_encontrado, retificacoes_encontradas, retificacoes_info, cabecalho_ato, itens_por_categoria, itens_filtrados, itens_total, retificacoes_tratadas, retificacoes_aplicadas, retificacoes_referenciadas)
+    registrar(agora, status, erro, info, pdf_baixado, atos_encontrados, atos_info, dsv_encontrado, retificacoes_encontradas, retificacoes_info, cabecalho_ato, itens_por_categoria, itens_filtrados, itens_total, retificacoes_tratadas, retificacoes_aplicadas, retificacoes_referenciadas, retificacoes_indiretas)

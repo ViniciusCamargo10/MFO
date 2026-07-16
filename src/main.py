@@ -12,6 +12,7 @@ from src.dou_scraper import (
     extrair_url_pdf_secao1,
     extrair_atos_do_pdf,
     extrair_retificacoes_do_pdf,
+    extrair_retificacoes_indiretas_do_pdf,
     tratar_retificacoes_diretas,
     processar_retificacoes_referenciadas,
     aplicar_filtros_atos,
@@ -123,11 +124,19 @@ def executar(pdf_path_override: str = ""):
             print(f"    ... +{len(itens_filtrados)-5} item(ns)")
 
     print("\n[5/8] Procurando por RETIFICACOES no PDF...")
-    sucesso_ret, retificacoes, mensagem_retificacoes = extrair_retificacoes_do_pdf(pdf_path)
+    sucesso_ret, retificacoes_diretas, mensagem_retificacoes = extrair_retificacoes_do_pdf(pdf_path)
     if not sucesso_ret:
-        retificacoes = []
-        mensagem_retificacoes = "Nenhuma retificacao encontrada."
+        retificacoes_diretas = []
+        mensagem_retificacoes = "Nenhuma retificacao direta encontrada."
     print(f"  {mensagem_retificacoes}")
+
+    sucesso_ind, retificacoes_indiretas, mensagem_indiretas = extrair_retificacoes_indiretas_do_pdf(pdf_path)
+    if not sucesso_ind:
+        retificacoes_indiretas = []
+    else:
+        print(f"  {mensagem_indiretas}")
+
+    retificacoes = retificacoes_diretas + retificacoes_indiretas
 
     print("\n[6/8] Tratando retificacoes diretas...")
     retificacoes_tratadas = tratar_retificacoes_diretas(atos, retificacoes)
@@ -180,7 +189,9 @@ def executar(pdf_path_override: str = ""):
     else:
         info_parts.append("[ERR] DSV/CGAA NAO encontrado")
     if retificacoes_encontradas > 0:
-        info_parts.append(f"[OK] Retificacoes: {retificacoes_encontradas} encontradas, {qtd_aplicadas} aplicadas")
+        qtd_ind = len(retificacoes_indiretas)
+        qtd_dir = len(retificacoes_diretas)
+        info_parts.append(f"[OK] Retificacoes: {qtd_dir} diretas, {qtd_ind} indiretas, {qtd_aplicadas} aplicadas")
         if qtd_referenciadas:
             ref_ok = sum(1 for r in retificacoes_tratadas if r.get("correcao_aplicada_referencia"))
             info_parts.append(f"     {ref_ok}/{qtd_referenciadas} referenciadas")
@@ -228,6 +239,7 @@ def executar(pdf_path_override: str = ""):
         retificacoes_tratadas=len(retificacoes_tratadas),
         retificacoes_aplicadas=qtd_aplicadas,
         retificacoes_referenciadas=qtd_referenciadas,
+        retificacoes_indiretas=len(retificacoes_indiretas),
     )
     print("\n" + "-" * 40)
     if tem_dados:
