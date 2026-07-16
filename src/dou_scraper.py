@@ -390,6 +390,11 @@ def extrair_retificacoes_indiretas_do_pdf(caminho_pdf: str) -> tuple[bool, list,
 
     Diferente das retificacoes diretas (ONDE SE LE / LEIA-SE), estas nao trazem
     o par de correcao — apenas referenciam o ato e a data originais.
+
+    Apenas retificacoes que mencionam explicitamente o titulo completo do DSV/CGAA
+    sao retornadas:
+      DEPARTAMENTO DE SANIDADE VEGETAL E INSUMOS AGRICOLAS
+      COORDENACAO-GERAL DE AGROTOXICOS E AFINS
     """
     try:
         import fitz
@@ -404,37 +409,58 @@ def extrair_retificacoes_indiretas_do_pdf(caminho_pdf: str) -> tuple[bool, list,
     def normalizar(texto: str) -> str:
         return re.sub(r"\s+", " ", texto).strip().upper()
 
+    # Titulo completo do DSV/CGAA — mesma referencia usada nas retificacoes diretas
+    TITULO_DSV = (
+        "DEPARTAMENTO DE SANIDADE VEGETAL E INSUMOS AGRICOLAS "
+        "COORDENACAO-GERAL DE AGROTOXICOS E AFINS"
+    )
+    TITULO_DSV_ACENTOS = (
+        "DEPARTAMENTO DE SANIDADE VEGETAL E INSUMOS AGRÍCOLAS "
+        "COORDENAÇÃO-GERAL DE AGROTÓXICOS E AFINS"
+    )
+    TITULO_DSV_NORM = normalizar(TITULO_DSV)
+    TITULO_DSV_ACENTOS_NORM = normalizar(TITULO_DSV_ACENTOS)
+
+    # Fragmentos minimos do titulo para busca em blocos de texto menores
+    # (o titulo pode estar dividido em linhas no PDF)
+    FRAGMENTOS_DSV = [
+        "SANIDADE VEGETAL E INSUMOS AGRICOLAS",
+        "SANIDADE VEGETAL E INSUMOS AGRÍCOLAS",
+        "COORDENACAO-GERAL DE AGROTOXICOS",
+        "COORDENAÇÃO-GERAL DE AGROTÓXICOS",
+        "CGAA",
+        "DSV",
+    ]
+
     # Padroes para identificar inicio de secao de retificacoes no PDF
     PADROES_SECAO_RETIF = re.compile(
         r"^\s*RETIFICA[ÇC][ÕO]ES\s*$|^\s*ERRATA\s*$|^\s*ERRATA[S]?\s*$",
         re.IGNORECASE | re.MULTILINE,
     )
 
-    # Padroes para detectar retificacao indireta do DSV/CGAA
+    # Padroes para detectar retificacao indireta — sem filtro de orgao aqui,
+    # o filtro de orgao e feito via verificacao do bloco de contexto
     PADROES_RETIF_INDIRETA = [
-        # "Retifica-se o Ato no 39 do DSV..."
+        # "Retifica-se o Ato no 39..."
         re.compile(
-            r"RETIFICA[- ]?SE\s+O\s+ATO\s+N[Oº°]?\s*\.?\s*(\d+)[^,.\n]*?"
-            r"(?:DSV|CGAA|SANIDADE\s+VEGETAL|AGROT[ÓO]XICOS)[^,.\n]*?"
-            r"(?:PUBLICADO\s+NO\s+DOU\s+DE\s+([\d]{1,2}[/\-][\d]{1,2}[/\-][\d]{4}))?",
+            r"RETIFICA[- ]?SE\s+O\s+ATO\s+N[Oº°]?\s*\.?\s*(\d+)"
+            r"(?:[^.]{0,200}?"
+            r"(?:PUBLICADO\s+NO\s+DOU\s+DE\s+([\d]{1,2}[/\-][\d]{1,2}[/\-][\d]{4})))?",
             re.IGNORECASE,
         ),
-        # "Errata: No Ato no 49 do CGAA..."
+        # "Errata: No Ato no 49..."
         re.compile(
-            r"ERRATA\s*[:\-]?\s*NO\s+ATO\s+N[Oº°]?\s*\.?\s*(\d+)[^,.\n]*?"
-            r"(?:DSV|CGAA|SANIDADE\s+VEGETAL|AGROT[ÓO]XICOS)",
+            r"ERRATA\s*[:\-]?\s*NO\s+ATO\s+N[Oº°]?\s*\.?\s*(\d+)",
             re.IGNORECASE,
         ),
-        # "Correcao: Na publicacao do Ato no 45 do DSV..."
+        # "Correcao: Na publicacao do Ato no 45..."
         re.compile(
-            r"CORRE[ÇC][ÃA]O\s*[:\-]?\s*NA\s+PUBLICA[ÇC][ÃA]O\s+DO\s+ATO\s+N[Oº°]?\s*\.?\s*(\d+)[^,.\n]*?"
-            r"(?:DSV|CGAA|SANIDADE\s+VEGETAL|AGROT[ÓO]XICOS)",
+            r"CORRE[ÇC][ÃA]O\s*[:\-]?\s*NA\s+PUBLICA[ÇC][ÃA]O\s+DO\s+ATO\s+N[Oº°]?\s*\.?\s*(\d+)",
             re.IGNORECASE,
         ),
-        # "Corrigir a publicacao do Ato do DSV..."
+        # "Corrigir a publicacao do Ato..."
         re.compile(
-            r"CORRIGIR\s+A\s+PUBLICA[ÇC][ÃA]O\s+DO\s+ATO[^,.\n]*?"
-            r"(?:DSV|CGAA|SANIDADE\s+VEGETAL|AGROT[ÓO]XICOS)",
+            r"CORRIGIR\s+A\s+PUBLICA[ÇC][ÃA]O\s+DO\s+ATO",
             re.IGNORECASE,
         ),
     ]
@@ -445,6 +471,26 @@ def extrair_retificacoes_indiretas_do_pdf(caminho_pdf: str) -> tuple[bool, list,
         re.IGNORECASE,
     )
 
+    def bloco_menciona_dsv(linhas: list, idx_inicio: int, janela: int = 15) -> bool:
+        """
+        Verifica se o bloco ao redor da linha idx_inicio (janela de +/- linhas)
+        menciona o titulo completo do DSV/CGAA ou seus fragmentos identificadores.
+        """
+        inicio = max(0, idx_inicio - janela)
+        fim = min(len(linhas), idx_inicio + janela)
+        contexto = normalizar(" ".join(linhas[inicio:fim]))
+
+        # Verificar titulo completo primeiro
+        if TITULO_DSV_NORM in contexto or TITULO_DSV_ACENTOS_NORM in contexto:
+            return True
+
+        # Verificar fragmentos — exige pelo menos 2 fragmentos presentes
+        # (evita falsos positivos por "DSV" ou "CGAA" soltos)
+        fragmentos_encontrados = sum(
+            1 for f in FRAGMENTOS_DSV if normalizar(f) in contexto
+        )
+        return fragmentos_encontrados >= 2
+
     retificacoes_indiretas = []
 
     for pag_num in range(len(doc)):
@@ -454,6 +500,12 @@ def extrair_retificacoes_indiretas_do_pdf(caminho_pdf: str) -> tuple[bool, list,
 
         # Checar se esta pagina contem secao de RETIFICACOES / ERRATA
         em_secao_retif = bool(PADROES_SECAO_RETIF.search(texto_norm))
+
+        # Checar se esta pagina menciona o DSV/CGAA (pelo titulo completo)
+        pagina_tem_dsv = (
+            TITULO_DSV_NORM in texto_norm
+            or TITULO_DSV_ACENTOS_NORM in texto_norm
+        )
 
         # Varrer linha a linha em busca dos padroes de retificacao indireta
         linhas = texto_pag.split("\n")
@@ -469,6 +521,12 @@ def extrair_retificacoes_indiretas_do_pdf(caminho_pdf: str) -> tuple[bool, list,
             for padrao in PADROES_RETIF_INDIRETA:
                 m = padrao.search(linha_norm)
                 if not m:
+                    continue
+
+                # Verificar se o bloco ao redor menciona explicitamente o DSV/CGAA
+                # Se a pagina inteira nao tem DSV e o bloco proximo tambem nao menciona,
+                # ignorar — pode ser retificacao de outro orgao
+                if not pagina_tem_dsv and not bloco_menciona_dsv(linhas, i):
                     continue
 
                 # Extrair numero do ato (grupo 1 quando disponivel)
