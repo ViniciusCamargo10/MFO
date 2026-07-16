@@ -1,7 +1,147 @@
 ## Sprint 3 — 22/06 a 26/06
 
 ### Meta
-Fazer o robô verificar mudanças nos cadastros comparando DOU vs Cadastro, aplicar filtros e tratar retificação direta.
+Fazer o robô verificar mudanças nos cadastros comparando DOU vs Cadastro, aplicar filtros e tratar retificação direta e indireta.
+
+---
+
+## To Clarify
+
+### 1. Confirmar quais campos serão usados para comparação ✅ (resolvido — Sprint 4)
+Acesso ao Veeva liberado. Estratégia definida: export nativo do Veeva (Excel/CSV) lido pelo robô, comparação com DOU, fluxo de aprovação humana antes de gravar alterações. Mapeamento de colunas definido na Sprint 4.
+
+### 2. Confirmar quais mudanças são relevantes ✅ (definido)
+Definir quais tipos de alteração devem ser consideradas como impacto no processo.
+
+**Motivos relevantes — matriz completa:**
+
+| Categoria | Inclusão | Alteração | Exclusão | Onde pegamos | Veeva? | Ação |
+|-----------|:--------:|:---------:|:--------:|-------------|:------:|------|
+| Fabricantes | ✅ | ✅ | ✅ | DOU | ✅ | Compara com Veeva |
+| Formuladores | ✅ | ✅ | ✅ | DOU | ✅ | Compara com Veeva |
+| Manipuladores | ✅ | ✅ | ✅ | DOU | ✅ | Compara com Veeva |
+| Marca comercial | ✅ | ✅ | ✅ | DOU | ✅ | Compara com Veeva |
+| Razão social | ✅ | ✅ | ✅ | DOU | ✅ | Compara com Veeva |
+| Produto técnico no formulado | ✅ | ✅ | ✅ | DOU | ✅ | Compara com Veeva |
+| Endereço | — | ✅ | — | DOU | ❌ | Detecta no DOU e reporta |
+| Qualiquanti | — | ❓ | — | DOU | ❌ | Aguardando |
+| Transferência de titularidade | — | ✅ | — | DOU | ❌ | Detecta no DOU e reporta |
+| Retificações no DOU | — | ✅ | — | DOU (ONDE SE LE / LEIA-SE) | ✅ | Compara com Veeva |
+
+### 3. Confirmar se filtro por palavra-chave (AGRO/MFO) atende ou precisa de complemento ✅ (resolvido)
+O robô busca pelo DSV/CGAA no PDF. Filtro está correto e funciona.
+
+### 4. Confirmar comportamento quando não houver mudança em cadastro ✅ (definido)
+Decisão: Registrar no log com status apropriado e encerrar o fluxo.
+
+### 5. Confirmar exemplos de retificação direta ✅ (definido)
+Retificação direta = par "ONDE SE LE / LEIA-SE" extraído do PDF. O robô aplica a alteração diretamente no cadastro.
+
+---
+
+## To Do
+
+### 1. Criar regra DOU x Cadastro ✅ (movido para Sprint 4)
+Acesso ao Veeva liberado. Aguarda mapeamento de colunas do export para implementação.
+
+### 2. Criar cenário de mudança e não mudança ✅ (definido)
+- ✅ Quando há mudança relevante → segue no fluxo
+- ✅ Quando não há mudança → registra no log e encerra
+
+### 3. Criar lógica de aplicação dos filtros ✅ (implementado)
+- `aplicar_filtros_atos()` em `dou_scraper.py`
+- Testado: 150 itens encontrados, 44 ativos no filtro
+
+### 4. Criar tratamento para retificação direta ✅ (implementado)
+- `tratar_retificacoes_diretas()` em `dou_scraper.py`
+- Integrado ao fluxo do `main.py`
+
+### 5. Criar armazenamento dos dados identificados ✅ (implementado)
+- Excel: `salvar_dados_estruturados()` — abas "Passaram" e "Todos"
+- JSON + TXT: `salvar_atos_json()` em `main.py`
+- Relatório PDF: `gerar_relatorio()` em `src/relatorio.py`
+
+### 6. Registrar resultado no log ✅ (implementado)
+- `logger.py` com 17 campos estruturados, incluindo `retificacoes_indiretas`
+- Registra: categoria, tipo, qtd por filtro, retificações diretas/indiretas/referenciadas
+
+---
+
+## In Progress
+
+- (Nenhum — sprint concluída)
+
+---
+
+## Review
+
+### 1. Testar caso com mudança relevante ✅
+Validado com PDF 09/03/2026: 150 itens, 44 passaram pelo filtro.
+
+### 2. Testar caso sem mudança relevante ✅
+Comportamento definido e implementado.
+
+### 3. Validar motivos de alteração ✅
+Matriz de filtros validada com dados reais.
+
+---
+
+## Done
+
+- #3 Aplicação dos filtros — `aplicar_filtros_atos()` testado (150 itens, 44 ativos)
+- #4 Retificação direta — `tratar_retificacoes_diretas()`, `extrair_data_dou_referenciada()`, `extrair_url_pdf_secao1_por_data()`, `processar_retificacoes_referenciadas()` implementados
+- #5 Armazenamento — Excel (`openpyxl`), JSON, TXT e PDF relatório (`fpdf2`)
+- #6 Log estruturado com 17 campos incluindo indiretas
+
+---
+
+## Retificação Indireta — IMPLEMENTADO ✅ (16/07)
+
+Função `extrair_retificacoes_indiretas_do_pdf()` em `src/dou_scraper.py`.
+
+**Estratégia implementada:**
+- Segunda passada independente em todas as páginas do PDF
+- Detecta seção "RETIFICAÇÕES" / "ERRATA" onde quer que apareça
+- Filtra apenas retificações que mencionam DSV/CGAA
+- Ignora falsos positivos: "CANCELAMOS O REGISTRO", "TORNAMOS SEM EFEITO", "REVOGAMOS"
+
+**Padrões detectados:**
+| Padrão | Regex |
+|--------|-------|
+| "Retifica-se o Ato nº X do DSV..." | `RETIFICA-SE O ATO Nº \d+.*DSV\|CGAA` |
+| "Errata: No Ato nº Y do CGAA..." | `ERRATA: NO ATO Nº \d+.*DSV\|CGAA` |
+| "Correção: Na publicação do Ato nº Z..." | `CORREÇÃO: NA PUBLICAÇÃO DO ATO Nº \d+.*DSV\|CGAA` |
+| "Corrigir a publicação do Ato do DSV..." | `CORRIGIR A PUBLICAÇÃO DO ATO.*DSV\|CGAA` |
+
+**Output no JSON:**
+```json
+{
+  "tipo": "indireta",
+  "ato_original": "ATO Nº 39",
+  "data_original": "09/03/2026",
+  "texto": "Retifica-se o Ato nº 39 do DSV publicado no DOU de...",
+  "pagina": 45,
+  "em_secao_retificacoes": true,
+  "descricao": "Retificacao indireta: ..."
+}
+```
+
+---
+
+## Retificação Referenciada — IMPLEMENTADO ✅ (23/06)
+
+| # | Edição referenciada | Categoria | Registro |
+|---|-------------------|-----------|----------|
+| 1 | DOU de 23/10/2025 | Marca comercial | 34223 |
+| 2 | DOU de 30/12/2025 | Recomendações de uso | 8499 |
+| 3 | DOU de 18/02/2026 | Marca comercial | — |
+
+**Funcionalidades implementadas:**
+- ✅ Detecção automática de "NO DOU DE dd/mm/aaaa" no LEIA-SE
+- ✅ Download da edição referenciada do DOU
+- ✅ Extração do ATO do DSV/CGAA da edição original
+- ✅ Aplicação da correção (ONDE SE LE → LEIA-SE) no texto original
+- ✅ Armazenamento de `texto_original` e `texto_corrigido` da edição referenciada
 
 ---
 
