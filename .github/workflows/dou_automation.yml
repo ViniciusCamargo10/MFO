@@ -23,6 +23,9 @@ jobs:
           playwright install-deps chromium
 
       - name: Executar automacao
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
         run: python src/main.py --manual
 
       - name: Upload do log
